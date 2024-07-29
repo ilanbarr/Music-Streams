@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-import matplotlib.pyplot as plt
-import seaborn as sns
+import altair as alt
+import numpy as np
 
 # Load the data
 file_path = 'Most Streamed Spotify Songs 2024.csv'
@@ -116,77 +116,185 @@ st.altair_chart(chart, use_container_width=True)
 
 # New visualizations
 
-# 1. Spotify Streams distribution
+
+
+# Assuming df is your DataFrame with the 'Spotify Streams' column
 st.header('Distribution of Spotify Streams')
-fig, ax = plt.subplots(figsize=(10, 6))
-sns.histplot(df['Spotify Streams'].dropna(), kde=True, log_scale=True, ax=ax)
-ax.set_title('Distribution of Spotify Streams (Log Scale)')
-ax.set_xlabel('Spotify Streams')
-ax.set_ylabel('Count')
-st.pyplot(fig)
 
-# 2. Track Score distribution
+# Calculate the bin edges using logarithmic scale
+min_streams = df['Spotify Streams'].min()
+max_streams = df['Spotify Streams'].max()
+log_bins = np.logspace(np.log10(max(1, min_streams)), np.log10(max_streams), num=50)
+
+# Create a histogram using the log-scaled bins
+hist, bin_edges = np.histogram(df['Spotify Streams'], bins=log_bins)
+
+# Create a DataFrame for the histogram data
+hist_df = pd.DataFrame({
+    'Spotify Streams': bin_edges[:-1],
+    'Count': hist
+})
+
+# Create the Altair chart
+spotify_streams_chart = alt.Chart(hist_df).mark_bar().encode(
+    x=alt.X('Spotify Streams:Q', 
+            scale=alt.Scale(type='log', base=10),
+            axis=alt.Axis(title='Spotify Streams (log scale)')),
+    y=alt.Y('Count:Q', title='Frequency'),
+    tooltip=[alt.Tooltip('Spotify Streams:Q', title='Spotify Streams', format=',.0f'),
+             alt.Tooltip('Count:Q', title='Frequency')]
+).properties(
+    width=700,
+    height=400,
+    title='Distribution of Spotify Streams'
+)
+
+st.altair_chart(spotify_streams_chart, use_container_width=True)
+
 st.header('Distribution of Track Scores')
-fig, ax = plt.subplots(figsize=(10, 6))
-sns.histplot(df['Track Score'], kde=True, ax=ax)
-ax.set_title('Distribution of Track Scores')
-ax.set_xlabel('Track Score')
-ax.set_ylabel('Count')
-st.pyplot(fig)
 
-# 3. Explicit vs Non-Explicit tracks pie chart
+# Ensure there are no missing or erroneous values in the 'Track Score' column
+df = df.dropna(subset=['Track Score'])
+
+track_score_chart = alt.Chart(df).transform_density(
+    density='Track Score',
+    as_=['Track Score', 'Density'],
+    extent=[df['Track Score'].min(), df['Track Score'].max()],
+    counts=False,  # Set to True if you want count density
+).mark_area().encode(
+    x=alt.X('Track Score:Q', title='Track Score'),
+    y=alt.Y('Density:Q', title='Density'),
+    tooltip=[alt.Tooltip('Track Score:Q', title='Track Score'),
+             alt.Tooltip('Density:Q', title='Density')]
+).properties(
+    width=700,
+    height=400,
+    title='Distribution of Track Scores'
+)
+
+st.altair_chart(track_score_chart, use_container_width=True)
+
+
+# st.altair_chart(track_score_chart, use_container_width=True)
 st.header('Proportion of Explicit vs Non-Explicit Tracks')
-explicit_counts = df['Explicit Track'].value_counts()
-fig, ax = plt.subplots(figsize=(8, 8))
-ax.pie(explicit_counts, labels=['Non-Explicit', 'Explicit'], autopct='%1.1f%%')
-ax.set_title('Proportion of Explicit vs Non-Explicit Tracks')
-st.pyplot(fig)
 
-# 4. Release Year vs Average Spotify Streams
+# Prepare the data for the pie chart
+explicit_counts = df['Explicit Track'].value_counts().reset_index()
+explicit_counts.columns = ['Explicit Track', 'Count']
+explicit_counts['Explicit Track'] = explicit_counts['Explicit Track'].replace({0: 'Non-Explicit', 1: 'Explicit'})
+
+# Create the Altair pie chart
+explicit_pie_chart = alt.Chart(explicit_counts).mark_arc(innerRadius=50).encode(
+    theta=alt.Theta(field="Count", type="quantitative"),
+    color=alt.Color(field="Explicit Track", type="nominal"),
+    tooltip=[alt.Tooltip('Explicit Track:N', title='Track Type'), 
+             alt.Tooltip('Count:Q', title='Count')]
+).properties(
+    width=400,
+    height=400,
+    title='Proportion of Explicit vs Non-Explicit Tracks'
+)
+
+st.altair_chart(explicit_pie_chart, use_container_width=True)
+
 st.header('Average Spotify Streams by Release Year')
-yearly_streams = df.groupby('Release Year')['Spotify Streams'].mean().sort_index()
-fig, ax = plt.subplots(figsize=(12, 6))
-yearly_streams.plot(kind='line', marker='o', ax=ax)
-ax.set_title('Average Spotify Streams by Release Year')
-ax.set_xlabel('Year')
-ax.set_ylabel('Average Spotify Streams')
-st.pyplot(fig)
 
-# 5. Correlation Matrix
-st.header('Correlation Matrix of Numeric Features')
+# Ensure 'Release Year' is properly parsed as an integer
+df['Release Year'] = pd.to_datetime(df['Release Date']).dt.year
+
+# Calculate the average Spotify Streams per Release Year
+yearly_streams = df.groupby('Release Year')['Spotify Streams'].mean().reset_index()
+
+# Create the Altair line chart
+yearly_streams_chart = alt.Chart(yearly_streams).mark_line(point=True).encode(
+    x=alt.X('Release Year:O', title='Release Year', axis=alt.Axis(format='d')),
+    y=alt.Y('Spotify Streams:Q', title='Average Spotify Streams'),
+    tooltip=[alt.Tooltip('Release Year:O', title='Release Year'), 
+             alt.Tooltip('Spotify Streams:Q', title='Avg Spotify Streams')]
+).properties(
+    width=700,
+    height=400,
+    title='Average Spotify Streams by Release Year'
+)
+
+st.altair_chart(yearly_streams_chart, use_container_width=True)
+
+# # 5. Correlation Matrix
+#st.header('Correlation Matrix of Numeric Features')
+
+# Define the numeric columns to include in the correlation matrix
 numeric_cols = ['Spotify Streams', 'Track Score', 'Spotify Popularity', 
                 'Apple Music Playlist Count', 'Deezer Playlist Count', 'Amazon Playlist Count']
+
+# Calculate the correlation matrix
 correlation_matrix = df[numeric_cols].corr()
-fig, ax = plt.subplots(figsize=(10, 8))
-sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', linewidths=0.5, ax=ax)
-ax.set_title('Correlation Matrix of Numeric Features')
-st.pyplot(fig)
 
-# 6. Track Score vs Spotify Streams scatter plot
-st.header('Track Score vs Spotify Streams')
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.scatter(df['Track Score'], df['Spotify Streams'], alpha=0.5)
-ax.set_title('Track Score vs Spotify Streams')
-ax.set_xlabel('Track Score')
-ax.set_ylabel('Spotify Streams')
-ax.set_yscale('log')
-st.pyplot(fig)
+# Transform the correlation matrix into a tidy format
+correlation_matrix = correlation_matrix.stack().reset_index()
+correlation_matrix.columns = ['Feature 1', 'Feature 2', 'Correlation']
 
-# 7. Summary statistics
-st.header('Summary Statistics for Key Numeric Columns')
-st.write(df[numeric_cols].describe())
+# Create the Altair chart
+correlation_matrix_chart = alt.Chart(correlation_matrix).mark_rect().encode(
+    x=alt.X('Feature 1:O', title='Feature 1'),
+    y=alt.Y('Feature 2:O', title='Feature 2'),
+    color=alt.Color('Correlation:Q', scale=alt.Scale(scheme='redblue', domain=(-1, 1))),
+    tooltip=[alt.Tooltip('Feature 1:N', title='Feature 1'),
+             alt.Tooltip('Feature 2:N', title='Feature 2'),
+             alt.Tooltip('Correlation:Q', title='Correlation')]
+).properties(
+    width=700,
+    height=400,
+    title='Correlation Matrix of Numeric Features'
+)
 
-# 8. Time series of top tracks
+st.altair_chart(correlation_matrix_chart, use_container_width=True)
+
+# # 6. Track Score vs Spotify Streams scatter plot
+# st.header('Track Score vs Spotify Streams')
+
+# Create the Altair scatter plot
+scatter_chart = alt.Chart(df).mark_circle(size=60).encode(
+    x=alt.X('Track Score:Q', title='Track Score'),
+    y=alt.Y('Spotify Streams:Q', title='Spotify Streams', scale=alt.Scale(type='log')),
+    color=alt.Color('Track Score:Q', scale=alt.Scale(scheme='viridis'), legend=None),
+    tooltip=[alt.Tooltip('Track:N', title='Track'),
+             alt.Tooltip('Artist:N', title='Artist'),
+             alt.Tooltip('Track Score:Q', title='Track Score'),
+             alt.Tooltip('Spotify Streams:Q', title='Spotify Streams', format=',')]
+).properties(
+    width=700,
+    height=400,
+    title='Track Score vs Spotify Streams'
+)
+
+st.altair_chart(scatter_chart, use_container_width=True)
+
+# # 7. Summary statistics
+# st.header('Summary Statistics for Key Numeric Columns')
+# st.write(df[numeric_cols].describe())
+
 st.header('Release Date and Spotify Streams of Top 10 Tracks')
-top_tracks = df.nlargest(10, 'Spotify Streams')
-fig, ax = plt.subplots(figsize=(12, 6))
-for _, track in top_tracks.iterrows():
-    ax.plot(track['Release Date'], track['Spotify Streams'], 'o', label=track['Track'])
-ax.set_title('Release Date and Spotify Streams of Top 10 Tracks')
-ax.set_xlabel('Release Date')
-ax.set_ylabel('Spotify Streams')
-plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-plt.tight_layout()
-st.pyplot(fig)
+
+# Convert 'Release Date' to datetime if it's not already
+df['Release Date'] = pd.to_datetime(df['Release Date'], errors='coerce')
+
+# Filter to get the top 10 tracks by Spotify Streams
+top_tracks = df.nlargest(10, 'Spotify Streams')[['Track', 'Release Date', 'Spotify Streams']]
+
+# Create the Altair time series chart
+time_series_chart = alt.Chart(top_tracks).mark_line(point=True).encode(
+    x=alt.X('Release Date:T', title='Release Date'),
+    y=alt.Y('Spotify Streams:Q', title='Spotify Streams', scale=alt.Scale(type='log')),
+    color=alt.Color('Track:N', legend=alt.Legend(title="Track")),
+    tooltip=[alt.Tooltip('Track:N', title='Track'),
+             alt.Tooltip('Release Date:T', title='Release Date'),
+             alt.Tooltip('Spotify Streams:Q', title='Spotify Streams', format=',')]
+).properties(
+    width=800,
+    height=400,
+    title='Release Date and Spotify Streams of Top 10 Tracks'
+)
+
+st.altair_chart(time_series_chart, use_container_width=True)
 
 st.write("Data Exploration Complete")
